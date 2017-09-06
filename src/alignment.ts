@@ -64,7 +64,17 @@ function io_proc(data){
   for(let i = 0;i< ios.length;i++){
     ios[i] = ios[i].replace(/,/g, '').trim();
   }
-  ios = cleanArray(ios);
+  if(vscode.workspace.getConfiguration("systemverilog")['condenseBlankLines']){
+    ios = cleanArray(ios);
+  }
+  else{
+    while(ios[0] == '')
+      ios.shift();
+
+    while(ios[ios.length-1] == '')
+      ios.pop();
+  }
+
   let v2 = ios_handle(ios);
   let v3 = ios_format(v2, ' '.repeat(2));
   v3 = mod + '\n' + v3 + '\n' + modend;
@@ -87,7 +97,9 @@ const ios_handle = function (ios){
 }
 
 const io_split = function(io_i) {
-  if(check_type(io_i, io_regformat[1])) {// split into list of io field
+  if(io_i == '')
+    return ['0', io_i];
+  else if(check_type(io_i, io_regformat[1])) {// split into list of io field
     let io = io_into_fields(io_i, io_regformat);
     // io_reg [flag, comment, data_type, assignment, vector, array, variable] 
     let io_arrange = [io[0], io[2], io[3], io[4], io[1]];
@@ -112,9 +124,19 @@ function io_into_fields(statement, fields){
 
 const ios_format = function(declarations_infield, ident){
   let anchors = get_anchors(declarations_infield, io_regformat.length);
+  if(vscode.workspace.getConfiguration("systemverilog")['alignEndOfLine']){
+    anchors[3]++;
+  }
   let recontructs = [];
   declarations_infield[declarations_infield.length-1][4] = declarations_infield[declarations_infield.length-1][4].replace(',', '');
   declarations_infield.forEach(function(dec){
+    if(vscode.workspace.getConfiguration("systemverilog")['alignEndOfLine']){
+      if(dec.length > 4){
+        if(dec[4][0] == ',')
+          dec[3] = dec[3]+',';
+        dec[4] = dec[4].replace(',', '');
+      }
+    }
     recontructs.push(format(dec, anchors, ident))
   },this);
   let r_text = '';
