@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 
 
 
-export function alignment(){
+export function alignment(): void{
   const editor = vscode.window.activeTextEditor;
   if (!editor) {
       return;
@@ -38,7 +38,7 @@ const io_regformat = [
 ];
 
 
-function test_new(data){
+function test_new(data:string): string{
   if(check_type(data, moduleio_regformat)){
     return io_proc(data);
   }
@@ -47,7 +47,7 @@ function test_new(data){
   }
 }
 
-function declration_and_assignment_proc(data){
+function declration_and_assignment_proc(data: string): string{
   let v1 = split_statements(data, '\n');
   let ident = get_ident(v1, dec_or_assign);
   let v2 = decs_handle(v1); // split a statement into fields and do inner-field prealignment
@@ -55,15 +55,13 @@ function declration_and_assignment_proc(data){
   return v3;
 }
 
-function io_proc(data){
-  let statement_obj = {str : data};
+function io_proc(data: string): string{
+  let statement_obj : StatementString = {str : data};
   let mod = get_state_field(statement_obj, /module .*\(/);
   let modend = get_state_field(statement_obj, /\);/);
-  let ss = statement_obj.str.replace(/,.*(\/\/.*)/g, '$1').replace(/,/g, ',\n');
+  let ss = statement_obj.str.replace(/,.*(\/\/.*)/g, '$1');
   let ios = ss.split('\n');
-  for(let i = 0;i< ios.length;i++){
-    ios[i] = ios[i].replace(/,/g, '').trim();
-  }
+  ios = ios.map(io => io.replace(/,/g, '').trim());
   if(vscode.workspace.getConfiguration("systemverilog")['condenseBlankLines']){
     ios = cleanArray(ios);
   }
@@ -81,22 +79,19 @@ function io_proc(data){
   return v3;
 }
 
-const ios_handle = function (ios){
-  let ios_r = [];
-  ios.forEach(function f(io){
-    ios_r.push(io_split(io));
-  },this);
+const ios_handle = function (ios: string[]): string[][]{
+  let ios_r = ios.map(io_split);
   ios_r = dec_align_vec(ios_r, 2); // align vector
-  ios_r.forEach(function(io){
+  return ios_r.map(io => {
     if(io[0]=='1'){
       io[3] = io[3].replace(',', '');
       io[4] = ','+io[4];
     }
-  },this);
-  return ios_r;
+    return io;    
+  });
 }
 
-const io_split = function(io_i) {
+const io_split = function(io_i: string): string[] {
   if(io_i == '')
     return ['0', io_i];
   else if(check_type(io_i, io_regformat[1])) {// split into list of io field
@@ -111,9 +106,9 @@ const io_split = function(io_i) {
     return ['0', io_i];
 };
 
-function io_into_fields(statement, fields){
+function io_into_fields(statement: string, fields: RegExp[]): string[]{
   let format_list = ['1'];
-  let statement_obj = {str : statement};
+  let statement_obj : StatementString = {str : statement};
   format_list.push(get_state_field_donttouch(statement_obj, fields[0])); //comment
   format_list.push(get_state_field(statement_obj, fields[1])); // assignment
   format_list.push(get_state_field(statement_obj, fields[2])); // dtype
@@ -122,48 +117,30 @@ function io_into_fields(statement, fields){
   return format_list;
 }
 
-const ios_format = function(declarations_infield, ident){
-  let anchors = get_anchors(declarations_infield, io_regformat.length);
-  if(vscode.workspace.getConfiguration("systemverilog")['alignEndOfLine']){
-    anchors[3]++;
-  }
-  let recontructs = [];
+const ios_format = function(declarations_infield: string[][], ident: string): string{
   declarations_infield[declarations_infield.length-1][4] = declarations_infield[declarations_infield.length-1][4].replace(',', '');
-  declarations_infield.forEach(function(dec){
-    if(vscode.workspace.getConfiguration("systemverilog")['alignEndOfLine']){
+  if(!vscode.workspace.getConfiguration("systemverilog")['alignEndOfLine']){
+    for(let dec of declarations_infield){
       if(dec.length > 4){
         if(dec[4][0] == ',')
           dec[3] = dec[3]+',';
         dec[4] = dec[4].replace(',', '');
       }
     }
-    recontructs.push(format(dec, anchors, ident))
-  },this);
-  let r_text = '';
-  recontructs.forEach(function(rec){
-    r_text += rec + '\n';
-  },this);
-  return r_text.slice(0, -1);
+  }
+  let anchors = get_anchors(declarations_infield, io_regformat.length);
+  let recontructs = declarations_infield.map(dec => format(dec, anchors, ident));
+  return recontructs.join('\n');
 }
 
-const dec_format = function(declarations_infield, ident){
+const dec_format = function(declarations_infield: string[][], ident: string): string{
   let anchors = get_anchors(declarations_infield, declaration_regformat.length);
-  let recontructs = [];
-  declarations_infield.forEach(function(dec){
-    recontructs.push(format(dec, anchors, ident))
-  },this);
-  let r_text = '';
-  recontructs.forEach(function(rec){
-    r_text += rec + '\n';
-  },this);
-  return r_text.slice(0, -1);
+  let recontructs = declarations_infield.map(dec => format(dec, anchors, ident));
+  return recontructs.join('\n');
 }
 
-const decs_handle = function (declarations){
-  let decs_r = [];
-  declarations.forEach(function f(declaration){
-    decs_r.push(dec_split(declaration));
-  },this);
+const decs_handle = function (declarations: string[]): string[][]{
+  let decs_r = declarations.map(dec_split);
   
   // dec     [mask, dtype, vec, variable, array, assignment]
   decs_r = dec_align_vec(decs_r, 2); // align vector
@@ -173,7 +150,7 @@ const decs_handle = function (declarations){
   return decs_r;
 }
 
-const dec_split = function(declaration) {
+const dec_split = function(declaration: string): string[] {
   if(check_type(declaration, dec_or_assign)) {// split into list of declaration field
     let dec = split_into_fields(declaration, declaration_regformat);
     // dec_reg [flag, comment, data_type, assignment, vector, array, variable] 
@@ -184,9 +161,9 @@ const dec_split = function(declaration) {
     return ['0', declaration];
 };
 
-function dec_align_assignment(declarations, assign_idx){
+function dec_align_assignment(declarations: string[][], assign_idx: number): string[][]{
   let rval_max = 0;
-  declarations.forEach(function(dec){
+  for(let dec of declarations){
     if(dec[0] == '1'){
       if(dec[assign_idx].search(/(=)/) !== -1){ // is assignment
         dec[assign_idx] = dec[assign_idx].replace(/([\+\-\*]{1,2}|\/)/g,  ' $1 ');
@@ -206,95 +183,67 @@ function dec_align_assignment(declarations, assign_idx){
         dec[assign_idx] = '';
       }
     }
-  },this);
+  }
   rval_max += 2;
-  declarations.forEach(function(dec){
+  for(let dec of declarations){
     if(dec[0] == '1'){
       if(dec[assign_idx].search(/<=/) !== -1)
-        dec[assign_idx] = dec[assign_idx] + ' '.repeat(rval_max+1 - dec[assign_idx].length) + ';';
+        dec[assign_idx] = PadRight(dec[assign_idx], rval_max+1) + ';';
       else
-        dec[assign_idx] = dec[assign_idx] + ' '.repeat(rval_max - dec[assign_idx].length) + ';';
+        dec[assign_idx] = PadRight(dec[assign_idx], rval_max) + ';';
     }
-  },this);
+  }
   return declarations;
 }
 
-function dec_align_vec(declarations, vec_field_idx){
-  let rval_max = [];
-  declarations.forEach(function(dec){
-    if(dec[0] == '1'){
-      if(dec[vec_field_idx].length > 0 && dec[vec_field_idx].search(/\[/) !== -1){ // has vector
-        dec[0] = '2';
-        let vec_ary = dec[vec_field_idx].split(/[\[\]:]/)
-        vec_ary.pop();
-        let idx = 0;
-        dec[vec_field_idx] = cleanArray(vec_ary);
-        dec[vec_field_idx].forEach(function(vec){
-          if(idx<rval_max.length)
-            rval_max[idx] = rval_max[idx] > vec.length ? rval_max[idx] : vec.length;
-          else
-            rval_max.push(vec.length);
-          idx++;
-        }, this);
-      }
-    }
-  },this);
-  declarations.forEach(function(dec){
-    if(dec[0] == '2'){
-      dec[0] = '1';
-      let idx = 0;
-      let restruc = '';
-      dec[vec_field_idx].forEach(function(vec_w){
-        if(idx%2 == 0)
-          restruc += '[';
-        restruc += ' '.repeat(rval_max[idx] - vec_w.length) + vec_w;
-        if(idx%2 == 0)
-          restruc += ':';
-        else
-          restruc += ']';
-        idx++;
-      }, this);
-      dec[vec_field_idx] = restruc;
-    }
-  },this);
+/**
+ * Align the indicies of vectors
+ * 
+ * @param {any[]} declarations 
+ * @param {number} vec_field_idx 
+ * @returns {any[]} 
+ */
+function dec_align_vec(declarations: string[][], vec_field_idx: number): string[][]{
+  let idxs = declarations.map(dec => get_vec_idxs(dec, vec_field_idx));
+  let rval_max = idxs.filter(a => a.length > 0)
+    .reduce(reduce_max_array, []);
+  let vec_strs = idxs.map(idx => gen_vec_string(idx, rval_max));
+
+  idxs.forEach((idx,i) => declarations[i][vec_field_idx] = vec_strs[i]);
   
   return declarations;
 }
 
-function get_ident(declarations, type){
-  let ident = '';
-  for(let i=0; i<declarations.length;i++){
-    if(check_type(declarations[i], type)) {// split into list of declaration field
-      ident = declarations[i].match(/\s*/); // get ident from first statement
-      break;
-    }
-  }
-  return ident;
+function get_ident(declarations: string[], type: RegExp): string{
+  let first = declarations.find(dec => check_type(dec, type));
+  if(first)
+    return first.match(/\s*/)[0]; // get ident from first statement
+  else
+    return '';
 }
 
-function format(statement_infield, anchors, ident){
-  let recontruct = '';
+function format(statement_infield: string[], anchors: number[], ident: string): string{
   if(statement_infield[0]=='1'){
-    recontruct += ident;
-    for(let i=1; i<anchors.length;i++)
-      recontruct += `${statement_infield[i]}${' '.repeat(anchors[i] - statement_infield[i].length)}`;
+    return statement_infield.slice(1)
+      .map((s,i) => `${PadRight(s, anchors[i+1])}`)
+      .reduce((acc,str) => acc+str, ident);
   }
-  else
-    recontruct+= statement_infield[1];
-  return recontruct;
+  else{
+    return statement_infield[1];
+  }
 }
-function split_statements(text, split_point){
+function split_statements(text: string, split_point: string): string[]{
   return text.split("\n");
 }
-function check_type(statement, type_identifier){
+function check_type(statement:string, type_identifier:RegExp): boolean{
   if(statement.search(type_identifier) !== -1)
     return true;
   else
     return false;
 }
-function split_into_fields(statement, fields){
+function split_into_fields(statement: string, fields: RegExp[]): string[] {
   let format_list = ['1'];
-  let statement_obj = {str : statement};
+  let statement_obj : StatementString = {str : statement};
   format_list.push(get_state_field_donttouch(statement_obj, fields[0])); //comment
   format_list.push(get_state_field(statement_obj, fields[1])); // assignment
   format_list.push(get_state_field(statement_obj, fields[2])); // dtype
@@ -309,24 +258,12 @@ function split_into_fields(statement, fields){
   format_list.push(get_state_field(statement_obj, fields[5]).replace(/(,)/g,  '$1 ')); // l_value or variable
   return format_list;
 }
-function get_anchors(statements_infield, num_of_anchors){
-  let anchors = [];
-  for(let i=0;i<num_of_anchors+1;i++)
-    anchors.push(0);
-  statements_infield.forEach(function(statement){
-    if(statement[0] == '0')
-      return;
-    else
-      for(let i = 1; i<num_of_anchors+1;i++)
-        if(anchors[i]<statement[i].length)
-          anchors[i] = statement[i].length;
-  },this);
-  for(let i = 0; i< anchors.length; i++){
-    anchors[i] += anchors[i] > 0 ? 1 : 0;
-  };
-  return anchors;
+function get_anchors(statements_infield: string[][], num_of_anchors: number): number[]{
+  return statements_infield.filter(s => s[0] != '0')
+    .reduce(reduce_max_array, [])
+    .map(a_cnt => a_cnt > 0 ? a_cnt + 1: a_cnt);
 }
-function get_state_field(s_obj, regx){
+function get_state_field(s_obj: StatementString, regx: RegExp): string{
   let field = '';
   let field_t = s_obj.str.match(regx);
   if(field_t){
@@ -335,7 +272,7 @@ function get_state_field(s_obj, regx){
   }
   return field;
 }
-function get_state_field_donttouch(s_obj, regx){
+function get_state_field_donttouch(s_obj: StatementString, regx: RegExp): string{
   let field = '';
   let field_t = s_obj.str.match(regx);
   if(field_t){
@@ -347,12 +284,39 @@ function get_state_field_donttouch(s_obj, regx){
 function get_max(a, b){
   return a > b ? a : b;
 }
-function cleanArray(actual) {
-  var newArray = new Array();
-  for (var i = 0; i < actual.length; i++) {
-    if (actual[i]) {
-      newArray.push(actual[i]);
-    }
+function cleanArray<T>(actual: T[]): T[] {
+  return actual.filter(act => act);
+}
+function PadLeft(str:string, width: number): string {
+  return ' '.repeat(width - str.length) + str;
+}
+function PadRight(str:string, width: number): string {
+  return str + ' '.repeat(width - str.length);
+}
+function reduce_max_array(acc: number[], val: string[]): number[]{
+  let res = acc.slice(0);
+  for (let i = 0; i < res.length && i < val.length; i++) {
+    if(val[i].length > acc[i])
+      res[i] = val[i].length;
   }
-  return newArray;
+  return res.concat(val.slice(res.length).map(s => s.length));
+}
+function get_vec_idxs(dec: string[], vec_field_idx: number): string[] {
+  if(dec[0] == '1' && dec[vec_field_idx].search(/\[/) !== -1){ // has vector
+    let vec_ary: string[] = dec[vec_field_idx].split(/[\[\]:]/).slice(0,-1);
+    return cleanArray(vec_ary);
+  }
+  else{
+    return [];
+  }
+}
+function gen_vec_string(idxs: string[], widths: number[]){
+  let restruc = '';
+  return idxs
+    .map((idx,i) => i%2 == 0 ? `[${PadLeft(idx, widths[i])}:` : `${PadLeft(idx, widths[i])}]`)
+    .join('');
+}
+
+interface StatementString {
+  str: string;
 }
