@@ -1,7 +1,6 @@
 import * as vscode from 'vscode';
 
 
-
 export function alignment(): void{
   const editor = vscode.window.activeTextEditor;
   if (!editor) {
@@ -48,10 +47,10 @@ function test_new(data:string): string{
 }
 
 function declration_and_assignment_proc(data: string): string{
-  let v1 = split_statements(data, '\n');
+  let v1 = data.split('\n');
   let ident = get_ident(v1, dec_or_assign);
   let v2 = decs_handle(v1); // split a statement into fields and do inner-field prealignment
-  let v3 = dec_format(v2, ident); // format the statements
+  let v3 = common_format(v2, ident); // format the statements
   return v3;
 }
 
@@ -61,6 +60,14 @@ function io_proc(data: string): string{
   let modend = get_state_field(statement_obj, /\);/);
   let ss = statement_obj.str.replace(/,.*(\/\/.*)/g, '$1');
   let ios = ss.split('\n');
+  let v2 = ios_handle(ios);
+  let v3 = ios_format(v2);
+  let v4 = common_format(v3, ' '.repeat(2));
+  v4 = mod + '\n' + v4 + '\n' + modend;
+  return v4;
+}
+
+const ios_handle = function (ios: string[]): CodeLine[]{
   ios = ios.map(io => io.replace(/,/g, '').trim());
   if(vscode.workspace.getConfiguration("systemverilog")['condenseBlankLines']){
     ios = cleanArray(ios);
@@ -73,143 +80,133 @@ function io_proc(data: string): string{
       ios.pop();
   }
 
-  let v2 = ios_handle(ios);
-  let v3 = ios_format(v2, ' '.repeat(2));
-  v3 = mod + '\n' + v3 + '\n' + modend;
-  return v3;
-}
-
-const ios_handle = function (ios: string[]): string[][]{
   let ios_r = ios.map(io_split);
-  ios_r = dec_align_vec(ios_r, 2); // align vector
+  ios_r = dec_align_vec(ios_r, 1); // align vector
   return ios_r.map(io => {
-    if(io[0]=='1'){
-      io[3] = io[3].replace(',', '');
-      io[4] = ','+io[4];
+    if(io.kind === 'formatted'){
+      if(vscode.workspace.getConfiguration("systemverilog")['alignEndOfLine']){
+        io.fields[2] = io.fields[2].replace(',', '');
+        io.fields[3] = ','+io.fields[3];
+      }
+      else{
+        if(io.fields[3][0] == ',')
+          io.fields[3] = io.fields[3].slice(1);
+        io.fields[2] = io.fields[2]+',';
+      }
     }
     return io;    
   });
 }
 
-const io_split = function(io_i: string): string[] {
+const io_split = function(io_i: string): CodeLine {
   if(io_i == '')
-    return ['0', io_i];
+    return new UnformattedLine(io_i);
   else if(check_type(io_i, io_regformat[1])) {// split into list of io field
     let io = io_into_fields(io_i, io_regformat);
-    // io_reg [flag, comment, data_type, assignment, vector, array, variable] 
-    let io_arrange = [io[0], io[2], io[3], io[4], io[1]];
-    return io_arrange;
+    // io_reg [comment, data_type, assignment, vector, array, variable] 
+    return new FormattedLine([io[1], io[2], io[3], io[0]]);
   }
   else if(!check_type(io_i, io_regformat[0]))
-    return ['1', '', '', io_i.trim(), ''];
+    return new FormattedLine(['', '', io_i.trim(), '']);
   else // unchange and marked as don't touch
-    return ['0', io_i];
+    return new UnformattedLine(io_i);
 };
 
 function io_into_fields(statement: string, fields: RegExp[]): string[]{
-  let format_list = ['1'];
   let statement_obj : StatementString = {str : statement};
+  let format_list: string[] = [];
   format_list.push(get_state_field_donttouch(statement_obj, fields[0])); //comment
   format_list.push(get_state_field(statement_obj, fields[1])); // assignment
   format_list.push(get_state_field(statement_obj, fields[2])); // dtype
   format_list.push(get_state_field(statement_obj, fields[3])); // vector
   format_list.push(get_state_field(statement_obj, fields[4])); // array
+  format_list[1] = format_list[1].replace(/\binput\b/, 'input ').replace(/\binout\b/, 'inout ');
   return format_list;
 }
 
-const ios_format = function(declarations_infield: string[][], ident: string): string{
-  declarations_infield[declarations_infield.length-1][4] = declarations_infield[declarations_infield.length-1][4].replace(',', '');
-  if(!vscode.workspace.getConfiguration("systemverilog")['alignEndOfLine']){
-    for(let dec of declarations_infield){
-      if(dec.length > 4){
-        if(dec[4][0] == ',')
-          dec[3] = dec[3]+',';
-        dec[4] = dec[4].replace(',', '');
-      }
-    }
-  }
-  let anchors = get_anchors(declarations_infield, io_regformat.length);
-  let recontructs = declarations_infield.map(dec => format(dec, anchors, ident));
+const ios_format = function(decs: CodeLine[]): CodeLine[]{
+  let idx = decs.length - 1;
+  while(!(decs[idx] instanceof FormattedLine) && idx >= 0)
+    idx--;
+  if(idx >= 0)
+    (decs[idx] as FormattedLine).fields[2] = (decs[idx] as FormattedLine).fields[2].replace(',', '')
+  return decs;
+}
+
+const common_format = function(declarations_infield: CodeLine[], ident: string): string{
+  let anchors = get_anchors(declarations_infield);
+  let recontructs = declarations_infield.map(dec => dec.format(anchors, ident));
   return recontructs.join('\n');
 }
 
-const dec_format = function(declarations_infield: string[][], ident: string): string{
-  let anchors = get_anchors(declarations_infield, declaration_regformat.length);
-  let recontructs = declarations_infield.map(dec => format(dec, anchors, ident));
-  return recontructs.join('\n');
-}
-
-const decs_handle = function (declarations: string[]): string[][]{
+const decs_handle = function (declarations: string[]): CodeLine[]{
   let decs_r = declarations.map(dec_split);
   
   // dec     [mask, dtype, vec, variable, array, assignment]
-  decs_r = dec_align_vec(decs_r, 2); // align vector
-  decs_r = dec_align_vec(decs_r, 4); // align array
+  decs_r = dec_align_vec(decs_r, 1); // align vector
+  decs_r = dec_align_vec(decs_r, 3); // align array
   decs_r = dec_align_assignment(decs_r, 5); // align assignment
 
   return decs_r;
 }
 
-const dec_split = function(declaration: string): string[] {
+const dec_split = function(declaration: string): CodeLine {
   if(check_type(declaration, dec_or_assign)) {// split into list of declaration field
     let dec = split_into_fields(declaration, declaration_regformat);
     // dec_reg [flag, comment, data_type, assignment, vector, array, variable] 
-    let dec_arrange = [dec[0], dec[2], dec[4], dec[6], dec[5], dec[3], dec[1]];
-    return dec_arrange;
+    let dec_arrange = [dec[1], dec[3], dec[5], dec[4], dec[2], dec[0]];
+    return new FormattedLine(dec_arrange);
   }
   else // unchange and marked as don't touch
-    return ['0', declaration];
+    return new UnformattedLine(declaration);
 };
 
-function dec_align_assignment(declarations: string[][], assign_idx: number): string[][]{
+function dec_align_assignment(declarations: CodeLine[], assign_idx: number): CodeLine[]{
   let rval_max = 0;
   for(let dec of declarations){
-    if(dec[0] == '1'){
-      if(dec[assign_idx].search(/(=)/) !== -1){ // is assignment
-        dec[assign_idx] = dec[assign_idx].replace(/([\+\-\*]{1,2}|\/)/g,  ' $1 ');
-        dec[assign_idx] = dec[assign_idx].replace(/(,)/g,  '$1 ');
-        if(dec[assign_idx].search(/<=/) !== -1){
-          dec[assign_idx] = dec[assign_idx].slice(2, dec[assign_idx].length-1).trim();
-          rval_max = dec[assign_idx].length > rval_max ? dec[assign_idx].length : rval_max;
-          dec[assign_idx] = '<= '+ dec[assign_idx];
+    if(dec.kind == 'formatted'){
+      if(dec.fields[assign_idx].search(/(=)/) !== -1){ // is assignment
+        dec.fields[assign_idx] = dec.fields[assign_idx].replace(/([\+\-\*]{1,2}|\/)/g,  ' $1 ');
+        dec.fields[assign_idx] = dec.fields[assign_idx].replace(/(,)/g,  '$1 ');
+        if(dec.fields[assign_idx].search(/<=/) !== -1){
+          dec.fields[assign_idx] = dec.fields[assign_idx].slice(2, dec.fields[assign_idx].length-1).trim();
+          rval_max = dec.fields[assign_idx].length > rval_max ? dec.fields[assign_idx].length : rval_max;
+          dec.fields[assign_idx] = '<= '+ dec.fields[assign_idx];
         }
         else {
-          dec[assign_idx] = dec[assign_idx].slice(1, dec[assign_idx].length-1).trim();
-          rval_max = dec[assign_idx].length > rval_max ? dec[assign_idx].length : rval_max;
-          dec[assign_idx] = '= '+ dec[assign_idx];
+          dec.fields[assign_idx] = dec.fields[assign_idx].slice(1, dec.fields[assign_idx].length-1).trim();
+          rval_max = dec.fields[assign_idx].length > rval_max ? dec.fields[assign_idx].length : rval_max;
+          dec.fields[assign_idx] = '= '+ dec.fields[assign_idx];
         }
       }
       else {
-        dec[assign_idx] = '';
+        dec.fields[assign_idx] = '';
       }
     }
   }
   rval_max += 2;
   for(let dec of declarations){
-    if(dec[0] == '1'){
-      if(dec[assign_idx].search(/<=/) !== -1)
-        dec[assign_idx] = PadRight(dec[assign_idx], rval_max+1) + ';';
+    if(dec.kind == 'formatted'){
+      if(dec.fields[assign_idx].search(/<=/) !== -1)
+        dec.fields[assign_idx] = PadRight(dec.fields[assign_idx], rval_max+1) + ';';
       else
-        dec[assign_idx] = PadRight(dec[assign_idx], rval_max) + ';';
+        dec.fields[assign_idx] = PadRight(dec.fields[assign_idx], rval_max) + ';';
     }
   }
   return declarations;
 }
 
-/**
- * Align the indicies of vectors
- * 
- * @param {any[]} declarations 
- * @param {number} vec_field_idx 
- * @returns {any[]} 
- */
-function dec_align_vec(declarations: string[][], vec_field_idx: number): string[][]{
+function dec_align_vec(declarations: CodeLine[], vec_field_idx: number): CodeLine[]{
   let idxs = declarations.map(dec => get_vec_idxs(dec, vec_field_idx));
   let rval_max = idxs.filter(a => a.length > 0)
     .reduce(reduce_max_array, []);
   let vec_strs = idxs.map(idx => gen_vec_string(idx, rval_max));
 
-  idxs.forEach((idx,i) => declarations[i][vec_field_idx] = vec_strs[i]);
+  vec_strs.forEach((vec_str,i) => {
+    let dec = declarations[i];
+    if(dec.kind == 'formatted') 
+      dec.fields[vec_field_idx] = vec_str;
+  });
   
   return declarations;
 }
@@ -222,32 +219,16 @@ function get_ident(declarations: string[], type: RegExp): string{
     return '';
 }
 
-function format(statement_infield: string[], anchors: number[], ident: string): string{
-  if(statement_infield[0]=='1'){
-    return statement_infield.slice(1)
-      .map((s,i) => `${PadRight(s, anchors[i+1])}`)
-      .reduce((acc,str) => acc+str, ident);
-  }
-  else{
-    return statement_infield[1];
-  }
-}
-function split_statements(text: string, split_point: string): string[]{
-  return text.split("\n");
-}
 function check_type(statement:string, type_identifier:RegExp): boolean{
-  if(statement.search(type_identifier) !== -1)
-    return true;
-  else
-    return false;
+  return (statement.search(type_identifier) !== -1);
 }
 function split_into_fields(statement: string, fields: RegExp[]): string[] {
-  let format_list = ['1'];
+  let format_list = [];
   let statement_obj : StatementString = {str : statement};
   format_list.push(get_state_field_donttouch(statement_obj, fields[0])); //comment
   format_list.push(get_state_field(statement_obj, fields[1])); // assignment
   format_list.push(get_state_field(statement_obj, fields[2])); // dtype
-  if(format_list[2]  == 'assign' || format_list[2] == ""){ //pure assignment
+  if(format_list[1]  == 'assign' || format_list[1] == ""){ //pure assignment
     format_list.push(""); //no vector
     format_list.push(""); //no array
   }
@@ -258,8 +239,9 @@ function split_into_fields(statement: string, fields: RegExp[]): string[] {
   format_list.push(get_state_field(statement_obj, fields[5]).replace(/(,)/g,  '$1 ')); // l_value or variable
   return format_list;
 }
-function get_anchors(statements_infield: string[][], num_of_anchors: number): number[]{
-  return statements_infield.filter(s => s[0] != '0')
+function get_anchors(statements_infield: CodeLine[]): number[]{
+  return statements_infield.filter(s => s.kind == 'formatted')
+    .map(s => (s as FormattedLine).fields)
     .reduce(reduce_max_array, [])
     .map(a_cnt => a_cnt > 0 ? a_cnt + 1: a_cnt);
 }
@@ -301,10 +283,15 @@ function reduce_max_array(acc: number[], val: string[]): number[]{
   }
   return res.concat(val.slice(res.length).map(s => s.length));
 }
-function get_vec_idxs(dec: string[], vec_field_idx: number): string[] {
-  if(dec[0] == '1' && dec[vec_field_idx].search(/\[/) !== -1){ // has vector
-    let vec_ary: string[] = dec[vec_field_idx].split(/[\[\]:]/).slice(0,-1);
-    return cleanArray(vec_ary);
+function get_vec_idxs(dec: CodeLine, vec_field_idx: number): string[] {
+  if(dec.kind == 'formatted') {
+    if(dec.fields[vec_field_idx].search(/\[/) !== -1){ // has vector
+      let vec_ary: string[] = dec.fields[vec_field_idx].split(/[\[\]:]/).slice(0,-1);
+      return cleanArray(vec_ary);
+    }
+    else {
+      return [];
+    }      
   }
   else{
     return [];
@@ -317,6 +304,30 @@ function gen_vec_string(idxs: string[], widths: number[]){
     .join('');
 }
 
-interface StatementString {
-  str: string;
+interface StatementString { str: string; }
+
+class FormattedLine {
+  kind: "formatted";
+  fields: string[];
+  constructor(fs: string[]) {
+    this.fields = fs;
+    this.kind = 'formatted';
+  }
+  format(anchors: number[], ident): string {
+    return this.fields
+    .map((s,i) => `${PadRight(s, anchors[i])}`)
+    .reduce((acc,str) => acc+str, ident);
+  }
 }
+class UnformattedLine {
+  kind: 'unformatted';
+  line: string;
+  constructor(text:string){
+    this.line = text;
+    this.kind = 'unformatted';
+  }
+  format(anchors: number[], ident): string {
+    return this.line;
+  }
+}
+type CodeLine = FormattedLine | UnformattedLine;
