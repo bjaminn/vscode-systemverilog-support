@@ -83,7 +83,7 @@ const ios_handle = function (ios: string[]): CodeLine[]{
   let ios_r = ios.map(io_split);
   ios_r = dec_align_vec(ios_r, 1); // align vector
   return ios_r.map(io => {
-    if(io.kind === 'formatted'){
+    if(io instanceof FormattedLine){
       if(vscode.workspace.getConfiguration("systemverilog")['alignEndOfLine']){
         io.fields[2] = io.fields[2].replace(',', '');
         io.fields[3] = ','+io.fields[3];
@@ -164,7 +164,7 @@ const dec_split = function(declaration: string): CodeLine {
 function dec_align_assignment(declarations: CodeLine[], assign_idx: number): CodeLine[]{
   let rval_max = 0;
   for(let dec of declarations){
-    if(dec.kind == 'formatted'){
+    if(dec instanceof FormattedLine){
       if(dec.fields[assign_idx].search(/(=)/) !== -1){ // is assignment
         dec.fields[assign_idx] = dec.fields[assign_idx].replace(/([\+\-\*]{1,2}|\/)/g,  ' $1 ');
         dec.fields[assign_idx] = dec.fields[assign_idx].replace(/(,)/g,  '$1 ');
@@ -186,7 +186,7 @@ function dec_align_assignment(declarations: CodeLine[], assign_idx: number): Cod
   }
   rval_max += 2;
   for(let dec of declarations){
-    if(dec.kind == 'formatted'){
+    if(dec instanceof FormattedLine){
       if(dec.fields[assign_idx].search(/<=/) !== -1)
         dec.fields[assign_idx] = PadRight(dec.fields[assign_idx], rval_max+1) + ';';
       else
@@ -204,7 +204,7 @@ function dec_align_vec(declarations: CodeLine[], vec_field_idx: number): CodeLin
 
   vec_strs.forEach((vec_str,i) => {
     let dec = declarations[i];
-    if(dec.kind == 'formatted') 
+    if(dec instanceof FormattedLine) 
       dec.fields[vec_field_idx] = vec_str;
   });
   
@@ -240,7 +240,7 @@ function split_into_fields(statement: string, fields: RegExp[]): string[] {
   return format_list;
 }
 function get_anchors(statements_infield: CodeLine[]): number[]{
-  return statements_infield.filter(s => s.kind == 'formatted')
+  return statements_infield.filter(s => s instanceof FormattedLine)
     .map(s => (s as FormattedLine).fields)
     .reduce(reduce_max_array, [])
     .map(a_cnt => a_cnt > 0 ? a_cnt + 1: a_cnt);
@@ -284,7 +284,7 @@ function reduce_max_array(acc: number[], val: string[]): number[]{
   return res.concat(val.slice(res.length).map(s => s.length));
 }
 function get_vec_idxs(dec: CodeLine, vec_field_idx: number): string[] {
-  if(dec.kind == 'formatted') {
+  if(dec instanceof FormattedLine) {
     if(dec.fields[vec_field_idx].search(/\[/) !== -1){ // has vector
       let vec_ary: string[] = dec.fields[vec_field_idx].split(/[\[\]:]/).slice(0,-1);
       return cleanArray(vec_ary);
@@ -307,11 +307,9 @@ function gen_vec_string(idxs: string[], widths: number[]){
 interface StatementString { str: string; }
 
 class FormattedLine {
-  kind: "formatted";
   fields: string[];
   constructor(fs: string[]) {
     this.fields = fs;
-    this.kind = 'formatted';
   }
   format(anchors: number[], ident): string {
     return this.fields
@@ -320,11 +318,9 @@ class FormattedLine {
   }
 }
 class UnformattedLine {
-  kind: 'unformatted';
   line: string;
   constructor(text:string){
     this.line = text;
-    this.kind = 'unformatted';
   }
   format(anchors: number[], ident): string {
     return this.line;
