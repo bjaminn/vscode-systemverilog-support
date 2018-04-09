@@ -1,7 +1,8 @@
 {
-	"name": "SystemVerilog",
+	"name": "systemverilog",
+	"displayName": "SystemVerilog",
 	"description": "System Verilog support for VS Code",
-	"version": "0.0.15",
+	"version": "0.0.18",
 	"publisher": "mshr-h",
 	"repository": {
 		"type": "git",
@@ -13,6 +14,7 @@
 	"categories": [
 		"Languages"
 	],
+	"icon": "images/icon.png",
 	"contributes": {
 		"languages": [
 			{
